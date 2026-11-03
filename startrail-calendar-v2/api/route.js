@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import {getApps,initializeApp,cert} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
-import {cleanEmail,cleanEvent,cleanProfile,joinEvent,leaveEvent,setPrefs,assignRole,copyForUpdate,fail} from './domain.js';
+import {cleanEmail,cleanEvent,cleanProfile,joinEvent,leaveEvent,setPrefs,assignRole,copyForUpdate,referencedMemberIds,hydrateEventNames,fail} from './domain.js';
 
 const stamp=()=>new Date().toISOString();
 const idForEmail=email=>createHash('sha256').update(cleanEmail(email)).digest('hex');
@@ -65,7 +65,20 @@ async function action(db, actor, body){
     case 'bootstrap':return {member:actor};
     case 'list': {
       const snap=await db.collection('events').orderBy('date','desc').limit(250).get();
-      return {events:snap.docs.map(parseEvent)};
+      const events=snap.docs.map(parseEvent);
+      // Names saved inside old events are snapshots, not authoritative profiles.
+      // Resolve all referenced members once per refresh, in bounded batches.
+      const ids=referencedMemberIds(events);
+      const memberNames=new Map();
+      for(let start=0;start<ids.length;start+=100){
+        const refs=ids.slice(start,start+100).map(uid=>db.collection('members').doc(uid));
+        const members=await db.getAll(...refs);
+        for(const member of members){
+          const currentName=member.exists?member.data()?.name:null;
+          if(typeof currentName==='string'&&currentName.trim()) memberNames.set(member.id,currentName);
+        }
+      }
+      return {events:events.map(e=>hydrateEventNames(e,memberNames))};
     }
     case 'create': {
       const fields=cleanEvent(body.event);

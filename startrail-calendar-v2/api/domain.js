@@ -99,4 +99,26 @@ export function assignRole(e, playerId, role, job) {
   if(plan && copy.participants.filter(x=>x.id!==p.id&&x.assignment?.role===role).length>=plan[role]) fail('這個位置已經排滿');
   p.assignment={role,job};return copy;
 }
+// Event records keep historical name snapshots for compatibility. The member profile
+// is the authoritative display name; hydrate names at read time so renames appear
+// for hosts, participants, waitlist and copied Discord text without rewriting events.
+export function referencedMemberIds(events) {
+  const ids = new Set();
+  for (const e of events) {
+    if (typeof e.hostId === 'string' && e.hostId) ids.add(e.hostId);
+    for (const p of [...(e.participants || []), ...(e.waitlist || [])]) {
+      if (typeof p.id === 'string' && p.id) ids.add(p.id);
+    }
+  }
+  return [...ids];
+}
+export function hydrateEventNames(event, memberNames) {
+  const nameFor = (uid, fallback) => memberNames.get(uid) || fallback;
+  return {
+    ...event,
+    host: nameFor(event.hostId, event.host),
+    participants: (event.participants || []).map(p => ({...p, name: nameFor(p.id, p.name)})),
+    waitlist: (event.waitlist || []).map(p => ({...p, name: nameFor(p.id, p.name)}))
+  };
+}
 export function copyForUpdate(e){const copy=structuredClone(e);delete copy.id;return copy;}
