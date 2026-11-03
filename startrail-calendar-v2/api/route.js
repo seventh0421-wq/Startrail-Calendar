@@ -3,6 +3,7 @@ import {getApps,initializeApp,cert} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {cleanEmail,cleanEvent,cleanProfile,joinEvent,leaveEvent,setPrefs,assignRole,copyForUpdate,referencedMemberIds,hydrateEventNames,fail} from './domain.js';
+import {syncAnnouncement,siteOrigin} from './discord.js';
 
 const stamp=()=>new Date().toISOString();
 const idForEmail=email=>createHash('sha256').update(cleanEmail(email)).digest('hex');
@@ -55,8 +56,9 @@ async function transactionEvent(db, id, actor, fn){
     const e=parseEvent(snap);
     const result=fn(e);
     const next=result?.event||result;
-    tx.update(ref,{...copyForUpdate(next),updatedAt:stamp()});
-    return {event:{...next,updatedAt:stamp()},result:result?.result||null,promoted:result?.promoted?.name||null};
+    const updatedAt=stamp(),revision=(e.revision||0)+1;
+    tx.update(ref,{...copyForUpdate(next),updatedAt,revision});
+    return {event:{...next,updatedAt,revision},result:result?.result||null,promoted:result?.promoted?.name||null};
   });
 }
 async function action(db, actor, body){
@@ -84,7 +86,7 @@ async function action(db, actor, body){
       const fields=cleanEvent(body.event);
       const ref=db.collection('events').doc();
       const e={...fields,id:ref.id,host:actor.name,hostId:actor.uid,
-        participants:[{id:actor.uid,name:actor.name}],waitlist:[],status:'active',createdAt:stamp(),updatedAt:stamp()};
+        participants:[{id:actor.uid,name:actor.name}],waitlist:[],status:'active',revision:1,createdAt:stamp(),updatedAt:stamp()};
       await ref.create(copyForUpdate(e));return {event:e};
     }
     case 'update':return transactionEvent(db,body.id,actor,e=>{
@@ -106,6 +108,13 @@ async function action(db, actor, body){
       if(!isManager(actor,e))fail('只有主揪或管理員能取消活動',403);
       return {...e,status:'cancelled'};
     });
+    case 'discordSync': {
+      const snap=await eventRef(db,body.id).get();
+      if(!snap.exists)fail('找不到這場活動',404);
+      const event=parseEvent(snap);
+      if(!isManager(actor,event))fail('只有主揪或管理員可以同步 Discord 公告',403);
+      return {event};
+    }
     case 'profile': {
       const profile=cleanProfile(body.profile);
       await db.collection('members').doc(actor.uid).update({...profile,updatedAt:stamp()});
@@ -149,7 +158,17 @@ export async function POST(request){
     const db=init();
     const id=await identity(request);
     const actor=await memberFor(db,id);
-    return ok(await action(db,actor,body));
+    const result=await action(db,actor,body);
+    // Send only after the Firestore mutation commits. Discord errors never undo
+    // a successful event creation, registration, or assignment.
+    if(['create','update','join','leave','prefs','assign','cancel','discordSync'].includes(body.action)&&result.event?.id){
+      try{result.discord=await syncAnnouncement(db,result.event.id,siteOrigin(request.url));}
+      catch(error){
+        console.error('Startrail Discord sync:',error.message);
+        result.discord={status:'error',message:'網站已儲存，但 Discord 同步失敗，請稍後重試。'};
+      }
+    }
+    return ok(result);
   }catch(err){
     if(!err.status)console.error('Startrail API error:',err);
     return ok({error:err.status?err.message:'伺服器處理失敗，請稍後再試'},err.status||500);

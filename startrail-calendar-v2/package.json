@@ -1,13 +1,17 @@
 {
   "name": "startrail-calendar",
-  "version": "2.0.0-beta.1",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node server.mjs",
     "test": "node --test test/*.test.js",
-    "check": "node --check api/route.js && node --check api/domain.js && node --check public/auth.js && node scripts/validate-inline.mjs && node --check server.mjs"
+    "check": "node --check api/route.js && node --check api/domain.js && node --check api/discord.js && node --check public/auth.js && node scripts/validate-inline.mjs && node --check server.mjs"
   },
-  "dependencies": {"firebase-admin": "^13.0.0"}
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
 }
