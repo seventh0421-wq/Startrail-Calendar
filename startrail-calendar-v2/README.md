@@ -1,4 +1,4 @@
-# 星旅日誌 Startrail Calendar — V2.1 Discord 公告版
+# 星旅日誌 Startrail Calendar — V2.1.1｜24 小時制與跨日活動修正版
 
 FF14 朋友專屬共用行事曆：手機優先的星空冒險風網站，支援 Google 登入、好友邀請、開團、+1／取消、候補、可複選坦／補／輸出職業、主揪正式排位、4／8／24 人隊伍總覽，及複製活動名單到 Discord。
 
@@ -144,3 +144,36 @@ test/domain.test.js     邏輯測試
 此版**不提供 Discord 中直接 +1 按鈕**，也**不要求**在 Discord Developer Portal 填寫 Interactions Endpoint URL；Discord 後端使用 REST API 主動發送公告，不需要機器人在線上保持 Gateway 連線。尚未連接真實 Discord／Firebase（沒有你的金鑰），已透過不連網的程式測試模擬發送與同步。
 
 一般情況下避免重複公告：Firestore 記錄每場活動的 Discord message ID；`nonce` 搭配 Discord 的短期重複檢查。若 Discord 已成功發送但 Firestore 在記錄結果時長時間失敗，仍有極小的重複風險。
+
+
+## V2.1.1：24 小時制與跨日活動（本次更新）
+
+這一版在 V2.1 的 Discord 公告功能之上修正時間欄位，**不會清除原有 Firebase 活動、報名或成員資料**。
+
+### 改動
+
+- 新增／編輯活動的時間欄位改為兩個下拉選單：**00–23 時、00–59 分**。不再依賴不同電腦／手機瀏覽器對 `<input type="time">` 的上午／下午顯示方式。
+- 若開始日期為 **2026-11-07**、開始 **22:00**、結束 **01:00**，未指定結束日期時自動記錄為 **2026-11-08 01:00**，並在表單下方顯示跨日提醒。
+- 若活動跨越多天（或開始、結束時刻相同但確實跨日），展開「**進階選項：手動指定結束日期**」選擇確切結束日。
+- 活動資料新增 `endDate`（實際結束日期）和 `endDateManual`（是否手動指定）的欄位。沒有這兩欄的舊活動仍能正常顯示，無須資料遷移。
+- 首頁、月曆、活動詳情、複製到 Discord 的名單與莫古力公告使用一致的跨日時間表示。跨日活動會在它涵蓋的各個月曆日期上顯示。
+- 首頁的「即將開始」也使用台灣時區的目前時刻與真正結束日期，以免剛過午夜就漏掉仍在進行的跨日活動。
+
+### 更新既有 GitHub／Vercel 專案
+
+1. **先備份** GitHub 目前運作正常的 V2.1 專案或記下最後可用的 commit。
+2. 將 `startrail_calendar_v2_1_1_time_patch.zip` 解壓縮，裡面含相對路徑 `startrail-calendar-v2/`。
+3. 以同路徑的新版檔案覆蓋你的 GitHub `Startrail-Calendar/startrail-calendar-v2/`：
+   - `api/domain.js`（後端驗證、跨日計算）
+   - `api/discord.js`（Discord 公告正確顯示跨日）
+   - `public/index.html`（24 小時輸入、跨日提醒、月曆／詳情顯示）
+   - 建議也更新 `test/domain.test.js`、`test/discord.test.js`、`package.json`、`README.md`。
+4. 在 GitHub 提交，等待 Vercel 自動部署為 **Ready**；不必修改 Firebase 或 Discord 的環境變數。
+5. 新增測試活動「11/7 22:00 到 11/8 01:00」，確認網站儲存成功，Discord 顯示兩個日期；修改活動名稱、+1、取消報名，確認 Discord 仍能更新原訊息。
+
+### 重要事項
+
+- 若原始開始時間與結束時間**完全相同**，又未指定結束日期，系統會拒絕建立，以免誤判為 24 小時的活動。需要整整一天請手動指定隔天結束。
+- 活動時間全部是**台灣時間（Asia/Taipei, UTC+8）**；資料庫儲存日期與 `HH:mm` 字串，不依觀看者的電腦時區自動轉換。
+- 專案仍使用 Firebase Admin SDK、Vercel 和原本的 Discord Bot；無新增付費服務、環境變數或額外權限。
+- `public/demo.html` 是舊版離線展示頁，並非線上正式版，本次未修改。真正部署的是 `public/index.html`。

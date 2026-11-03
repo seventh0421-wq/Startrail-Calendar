@@ -87,3 +87,10 @@ test('when Discord is unavailable, activity data remains intact and manual sync 
  const recovered=await syncAnnouncement(db,sample.id,'',{env:config,fetcher:fakeFetch([])});
  assert.equal(recovered.status,'sent');
 });
+
+test('Discord notice shows following date for overnight events',()=>{
+ const event={id:'abc123',title:'跨日挖寶',date:'2026-11-07',time:'22:00',end:'01:00',endDate:'2026-11-08',participants:[],waitlist:[],category:'explore',status:'active',cap:8,host:'Nanaki',description:'測試',location:'鳳凰'};
+ const payload=announcementPayload(event,'https://example.com');
+ const time=payload.embeds[0].fields.find(field=>field.name.includes('時間'));
+ assert.equal(time.value,'2026-11-07 22:00 → 2026-11-08 01:00');
+});

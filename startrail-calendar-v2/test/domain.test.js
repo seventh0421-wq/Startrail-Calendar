@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TEMPLATE,cleanEvent,cleanPrefs,joinEvent,leaveEvent,setPrefs,assignRole} from '../api/domain.js';
+import {TEMPLATE,cleanEvent,effectiveEndDate,scheduleText,cleanPrefs,joinEvent,leaveEvent,setPrefs,assignRole,referencedMemberIds,hydrateEventNames} from '../api/domain.js';
 const mk=(cap=4)=>({id:'event123',title:'測試團',category:'battle',date:'2026-11-07',time:'21:00',end:'23:00',cap,roleEnabled:true,waitlistEnabled:true,status:'active',host:'主揪',hostId:'host001',participants:[{id:'host001',name:'主揪',rolePreferences:{tank:'騎士'},assignment:{role:'tank',job:'騎士'}}],waitlist:[]});
 const person=(uid)=>({uid,name:uid});
 test('4/8/24 party templates',()=>{
@@ -44,4 +44,69 @@ test('invalid dates, over-limit and non-volunteered roles are rejected',()=>{
  assert.throws(()=>cleanPrefs({tank:''}),/職業/);
  assert.throws(()=>cleanPrefs({tank:'騎士',boss:'牛'}),/位置/);
  assert.throws(()=>leaveEvent(mk(4),'host001'),/主揪/);
+});
+
+test('renaming member updates host, attendee and waitlist labels for every reader',()=>{
+ const event=mk(4);
+ event.participants.push({id:'p1',name:'舊暱稱',rolePreferences:{dps:'舞者'}});
+ event.waitlist.push({id:'p1',name:'舊暱稱'});
+ const newNames=new Map([['host001','新主揪'],['p1','新的 FF14 暱稱']]);
+ assert.deepEqual(referencedMemberIds([event]),['host001','p1']);
+ const hydrated=hydrateEventNames(event,newNames);
+ assert.equal(hydrated.host,'新主揪');
+ assert.equal(hydrated.participants[0].name,'新主揪');
+ assert.equal(hydrated.participants[1].name,'新的 FF14 暱稱');
+ assert.equal(hydrated.waitlist[0].name,'新的 FF14 暱稱');
+ assert.equal(hydrated.participants[0].assignment.job,'騎士');
+ // Persisted event snapshots and team composition remain untouched.
+ assert.equal(event.host,'主揪');
+ assert.equal(event.participants[1].name,'舊暱稱');
+ assert.equal(event.waitlist[0].name,'舊暱稱');
+});
+test('unknown member falls back to saved name, no roster loss',()=>{
+ const event=mk(8);
+ event.participants.push({id:'former001',name:'已離開的朋友'});
+ const hydrated=hydrateEventNames(event,new Map([['host001','當前主揪']]));
+ assert.equal(hydrated.host,'當前主揪');
+ assert.equal(hydrated.participants[1].name,'已離開的朋友');
+ assert.deepEqual(referencedMemberIds([]),[]);
+});
+
+
+test('24-hour time and same-day 22:00–23:00 stay same day',()=>{
+ const event=cleanEvent({title:'一般夜團',date:'2026-11-07',time:'22:00',end:'23:00',cap:8});
+ assert.equal(event.endDate,'2026-11-07');
+ assert.equal(event.endDateManual,false);
+ assert.equal(scheduleText(event),'2026-11-07 22:00–23:00');
+});
+test('cross-midnight 22:00–01:00 becomes following day automatically',()=>{
+ const event=cleanEvent({title:'深夜團',date:'2026-11-07',time:'22:00',end:'01:00',cap:8});
+ assert.equal(event.endDate,'2026-11-08');
+ assert.equal(event.endDateManual,false);
+ assert.equal(scheduleText(event),'2026-11-07 22:00 → 2026-11-08 01:00');
+});
+test('auto cross-midnight correctly handles month/year/leap-day boundaries',()=>{
+ assert.equal(cleanEvent({title:'跨年',date:'2026-12-31',time:'23:50',end:'00:30',cap:8}).endDate,'2027-01-01');
+ assert.equal(cleanEvent({title:'跨月',date:'2028-02-29',time:'23:50',end:'00:30',cap:8}).endDate,'2028-03-01');
+});
+test('explicit multi-day end date is preserved',()=>{
+ const event=cleanEvent({title:'多日 RP',date:'2026-11-07',time:'22:00',end:'01:00',endDate:'2026-11-10',cap:0});
+ assert.equal(event.endDate,'2026-11-10');
+ assert.equal(event.endDateManual,true);
+ assert.equal(scheduleText(event),'2026-11-07 22:00 → 2026-11-10 01:00');
+});
+test('same start/end clock without explicit next day is rejected',()=>{
+ assert.throws(()=>cleanEvent({title:'同時',date:'2026-11-07',time:'22:00',end:'22:00',cap:8}),/相同/);
+ const event=cleanEvent({title:'一天',date:'2026-11-07',time:'22:00',end:'22:00',endDate:'2026-11-08',cap:8});
+ assert.equal(event.endDate,'2026-11-08');
+});
+test('end cannot precede start on an explicitly chosen date; invalid dates rejected',()=>{
+ assert.throws(()=>cleanEvent({title:'錯誤',date:'2026-11-07',time:'22:00',end:'01:00',endDate:'2026-11-07',cap:8}),/必須晚於/);
+ assert.throws(()=>cleanEvent({title:'錯誤',date:'2026-11-07',time:'22:00',end:'01:00',endDate:'2026-11-31',cap:8}),/日期格式/);
+ assert.throws(()=>cleanEvent({title:'錯誤',date:'2026-11-07',time:'22:00',end:'',endDate:'2026-11-08',cap:8}),/先填寫結束時間/);
+ assert.throws(()=>cleanEvent({title:'錯誤',date:'2026-11-07',time:'24:00',end:'01:00',cap:8}),/24 小時制/);
+});
+test('legacy events without endDate remain compatible',()=>{
+ assert.equal(effectiveEndDate({date:'2026-11-07',time:'21:00',end:'23:00'}),'2026-11-07');
+ assert.equal(scheduleText({date:'2026-11-07',time:'21:00',end:'23:00'}),'2026-11-07 21:00–23:00');
 });

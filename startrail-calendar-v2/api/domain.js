@@ -16,17 +16,49 @@ export function cleanEmail(email) {return str(email,254).toLowerCase();}
 export function cleanProfile(v) {
   return {name:requireText(v?.name,25,'角色暱稱'), avatar:['🌙','✨','🦊','⭐','🌸'].includes(v?.avatar)?v.avatar:'🌙'};
 }
+// All event date/time strings are wall-clock time in Asia/Taipei (UTC+8).
+// We store an explicit endDate so an overnight event is unambiguous in the
+// calendar, Discord announcement and API; old events without endDate still work.
+const isValidDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && Number.isFinite(Date.parse(`${value}T12:00:00Z`))
+  && new Date(`${value}T12:00:00Z`).toISOString().slice(0,10)===value;
+const isValidTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+export function addCalendarDays(date, days=1) {
+  const d=new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate()+days);
+  return d.toISOString().slice(0,10);
+}
+export function effectiveEndDate(event) {
+  if(!event.end)return event.date;
+  // Legacy records have no endDate and could only be same-day events.
+  return isValidDate(event.endDate)?event.endDate:(event.end<event.time?addCalendarDays(event.date):event.date);
+}
+export function scheduleText(event) {
+  const beginning=`${event.date} ${event.time}`;
+  if(!event.end)return beginning;
+  const ending=effectiveEndDate(event);
+  return ending===event.date?`${beginning}–${event.end}`:`${beginning} → ${ending} ${event.end}`;
+}
 export function cleanEvent(v, previous=null) {
   const title=requireText(v?.title,55,'活動名稱');
   const date=str(v?.date,10),time=str(v?.time,5),end=str(v?.end,5);
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(`${date}T12:00:00Z`))||new Date(`${date}T12:00:00Z`).toISOString().slice(0,10)!==date)fail('日期格式錯誤');
-  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))fail('開始時間格式錯誤');
-  if(end&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(end)||end<=time))fail('結束時間需晚於開始時間');
+  const submittedEndDate=str(v?.endDate,10);
+  if(!isValidDate(date))fail('日期格式錯誤');
+  if(!isValidTime(time))fail('開始時間格式錯誤（請使用 24 小時制）');
+  if(end&&!isValidTime(end))fail('結束時間格式錯誤（請使用 24 小時制）');
+  if(!end&&submittedEndDate)fail('請先填寫結束時間，再設定結束日期');
+  if(submittedEndDate&&!isValidDate(submittedEndDate))fail('結束日期格式錯誤');
+  // No specified end date: an earlier end clock implies *next day*.
+  // Equal clock times are ambiguous: require an explicit following date.
+  if(end&&!submittedEndDate&&end===time)fail('結束時間與開始時間相同；如需跨日，請手動指定結束日期');
+  const endDate=end?(submittedEndDate||(end<time?addCalendarDays(date):date)):'';
+  if(end&&`${endDate}T${end}`<=`${date}T${time}`)fail('結束日期與時間必須晚於開始時間');
+  const endDateManual=Boolean(end&&submittedEndDate);
   const cap=Number(v?.cap);
   if(![0,4,6,8,24].includes(cap))fail('參加人數設定錯誤');
   if(previous && cap && previous.participants.length>cap)fail('新名額不能少於已報名人數');
   const category=cats.includes(v?.category)?v.category:'other';
-  return {title,date,time,end,cap,category,
+  return {title,date,time,end,endDate,endDateManual,cap,category,
     location:str(v?.location,100),description:str(v?.description,1500),
     roleEnabled:category==='battle'&&v?.roleEnabled===true,
     waitlistEnabled:v?.waitlistEnabled===true};

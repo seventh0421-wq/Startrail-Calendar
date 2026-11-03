@@ -1,5 +1,5 @@
 // Server-only Discord announcements. Never expose a bot token to a browser.
-import {referencedMemberIds,hydrateEventNames} from './domain.js';
+import {referencedMemberIds,hydrateEventNames,scheduleText} from './domain.js';
 
 const TYPE = {
   battle:['⚔️ 戰鬥','#d69aaa',0xd69aaa],
@@ -31,7 +31,7 @@ export function announcementPayload(event,origin=''){
   const title=singleLine(event.title,200);
   const cancelled=event.status==='cancelled';
   const fields=[
-    {name:'📅 時間（台灣）',value:`${singleLine(event.date,10)} ${singleLine(event.time,5)}${event.end?`–${singleLine(event.end,5)}`:''}`,inline:true},
+    {name:'📅 時間（台灣 · 24 小時制）',value:singleLine(scheduleText(event),65),inline:true},
     {name:'🌙 主揪',value:singleLine(event.host,60),inline:true},
     {name:'👥 報名',value:`${count}${event.cap?` / ${event.cap}`:' 人（不限人數）'}${wait?` · 候補 ${wait} 人`:''}`,inline:true},
     {name:'📍 集合地點',value:singleLine(event.location||'主揪尚未公布',200),inline:false}
