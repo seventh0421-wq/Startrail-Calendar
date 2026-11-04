@@ -1,7 +1,7 @@
 // Injectable HTTP entry logic for signed Discord requests. Keeps the public
 // security boundary unit-testable without deploying or requiring credentials.
 import {verifyDiscordRequest,ephemeral,deferEphemeral,roleModal,linkModal,parseAction,json} from './discord-protocol.js';
-export async function handleDiscordHTTP(request,{env=process.env,schedule,process,origin}={}){
+export async function handleDiscordHTTP(request,{env=process.env,schedule,process:processAction,origin}={}){
   try{
     const raw=await request.text();
     if(raw.length>30000)return new Response('too large',{status:413});
@@ -21,7 +21,7 @@ export async function handleDiscordHTTP(request,{env=process.env,schedule,proces
     if(interaction.type===3&&parsed.kind==='edit'&&parsed.battle)return json(roleModal(parsed.id,'edit'));
     // Process only in the Vercel waitUntil lifecycle, and immediately ACK with
     // an ephemeral defer to satisfy Discord's three-second interaction window.
-    schedule(Promise.resolve().then(()=>process(interaction,parsed,origin)));
+    schedule(Promise.resolve().then(()=>processAction(interaction,parsed,origin)));
     return json(deferEphemeral());
   }catch(error){
     console.error('Startrail Discord endpoint:',error.message);
