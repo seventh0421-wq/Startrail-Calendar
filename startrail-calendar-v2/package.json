@@ -1,6 +1,6 @@
 {
   "name": "startrail-calendar",
-  "version": "2.1.1",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,9 +9,10 @@
   "scripts": {
     "dev": "node server.mjs",
     "test": "node --test test/*.test.js",
-    "check": "node --check api/route.js && node --check api/domain.js && node --check api/discord.js && node --check public/auth.js && node scripts/validate-inline.mjs && node --check server.mjs"
+    "check": "node --check api/route.js && node --check api/domain.js && node --check api/discord.js && node --check public/auth.js && node scripts/validate-inline.mjs && node --check server.mjs && node --check api/discord-interactions.js && node --check api/discord-link.js && node --check api/discord-protocol.js && node --check api/discord-handler-core.js"
   },
   "dependencies": {
-    "firebase-admin": "^13.0.0"
+    "firebase-admin": "^13.0.0",
+    "@vercel/functions": "^2.0.0"
   }
 }

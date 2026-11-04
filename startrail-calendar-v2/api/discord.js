@@ -46,7 +46,17 @@ export function announcementPayload(event,origin=''){
   }
   const url=eventLink(event,origin);
   const description=safe(event.description||'一起出發冒險吧！',1000);
+  const suffix=String(event.id||'');
+  const canButtons=/^[a-zA-Z0-9_-]{6,78}$/.test(suffix);
+  const components=(!cancelled&&canButtons)?[{type:1,components:[
+    {type:2,style:3,label:'+1 我要參加',custom_id:`st:join:${event.roleEnabled?'b':'n'}:${suffix}`},
+    {type:2,style:2,label:'取消報名',custom_id:`st:leave:${event.roleEnabled?'b':'n'}:${suffix}`},
+    ...(event.roleEnabled?[{type:2,style:1,label:'修改職業志願',custom_id:`st:edit:b:${suffix}`}]:[]),
+    {type:2,style:2,label:'綁定帳號',custom_id:'st:link'},
+    ...(url?[{type:2,style:5,label:'查看網站',url}]:[])
+  ]}]:[];
   return {
+    ...(components.length?{components}:{}),
     content:cancelled?'☁️ 庫啵！這場冒險已取消。':'☁️ 庫啵！星旅日誌有冒險邀請！',
     embeds:[{
       title:`${cancelled?'❌ [已取消] ':''}${title}`,
@@ -109,6 +119,9 @@ async function freshEvent(db,eventId){
 export async function syncAnnouncement(db,eventId,origin,options={}){
   const env=options.env||process.env;
   if(!discordConfigured(env))return {status:'unconfigured'};
+  // Defensive boundary: notes must never be posted as joinable Discord announcements.
+  const initial=await db.collection('events').doc(eventId).get();
+  if(initial.exists&&initial.data()?.category==='note')return {status:'skipped'};
   const announcements=db.collection('discordAnnouncements');
   const ref=announcements.doc(eventId);
   const channelId=env.DISCORD_CHANNEL_ID;

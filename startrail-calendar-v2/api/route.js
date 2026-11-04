@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {issueLinkCode,unlinkDiscord} from './discord-link.js';
 import {getApps,initializeApp,cert} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
@@ -8,7 +9,7 @@ import {syncAnnouncement,siteOrigin} from './discord.js';
 const stamp=()=>new Date().toISOString();
 const idForEmail=email=>createHash('sha256').update(cleanEmail(email)).digest('hex');
 const ok=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
-function init(){
+export function init(){
   if(!process.env.OWNER_EMAIL||!process.env.FIREBASE_PROJECT_ID) fail('伺服器尚未設定 OWNER_EMAIL 或 FIREBASE_PROJECT_ID',503);
   if(!getApps().length){
     if(!process.env.FIREBASE_SERVICE_ACCOUNT_JSON)fail('伺服器尚未設定 Firebase 管理員憑證',503);
@@ -48,7 +49,7 @@ async function memberFor(db, user){
 const isManager=(actor,e)=>actor.role==='admin'||e.hostId===actor.uid;
 function eventRef(db,id){if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{6,100}$/.test(id))fail('活動識別碼錯誤');return db.collection('events').doc(id)}
 function parseEvent(snap){return {id:snap.id,...snap.data()}}
-async function transactionEvent(db, id, actor, fn){
+export async function transactionEvent(db, id, actor, fn){
   const ref=eventRef(db,id);
   return db.runTransaction(async tx=>{
     const snap=await tx.get(ref);
@@ -65,9 +66,17 @@ async function action(db, actor, body){
   const what=body.action;
   switch(what){
     case 'bootstrap':return {member:actor};
+    case 'discordLinkCode':return issueLinkCode(db,actor);
+    case 'discordUnlink':return {member:{...actor,...await unlinkDiscord(db,actor)}};
     case 'list': {
-      const snap=await db.collection('events').orderBy('date','desc').limit(250).get();
-      const events=snap.docs.map(parseEvent);
+      // Keep yearly birthdays visible even after many newer activity records.
+      // Notes use a separate category query (single-field Firestore index).
+      const [snap, notesSnap]=await Promise.all([
+        db.collection('events').orderBy('date','desc').limit(250).get(),
+        db.collection('events').where('category','==','note').limit(100).get()
+      ]);
+      const unique=new Map([...snap.docs,...notesSnap.docs].map(doc=>[doc.id,parseEvent(doc)]));
+      const events=[...unique.values()];
       // Names saved inside old events are snapshots, not authoritative profiles.
       // Resolve all referenced members once per refresh, in bounded batches.
       const ids=referencedMemberIds(events);
@@ -86,7 +95,7 @@ async function action(db, actor, body){
       const fields=cleanEvent(body.event);
       const ref=db.collection('events').doc();
       const e={...fields,id:ref.id,host:actor.name,hostId:actor.uid,
-        participants:[{id:actor.uid,name:actor.name}],waitlist:[],status:'active',revision:1,createdAt:stamp(),updatedAt:stamp()};
+        participants:fields.category==='note'?[]:[{id:actor.uid,name:actor.name}],waitlist:[],status:'active',revision:1,createdAt:stamp(),updatedAt:stamp()};
       await ref.create(copyForUpdate(e));return {event:e};
     }
     case 'update':return transactionEvent(db,body.id,actor,e=>{
@@ -113,6 +122,7 @@ async function action(db, actor, body){
       if(!snap.exists)fail('找不到這場活動',404);
       const event=parseEvent(snap);
       if(!isManager(actor,event))fail('只有主揪或管理員可以同步 Discord 公告',403);
+      if(event.category==='note')fail('記事不會發送 Discord 揪團公告');
       return {event};
     }
     case 'profile': {
@@ -161,7 +171,7 @@ export async function POST(request){
     const result=await action(db,actor,body);
     // Send only after the Firestore mutation commits. Discord errors never undo
     // a successful event creation, registration, or assignment.
-    if(['create','update','join','leave','prefs','assign','cancel','discordSync'].includes(body.action)&&result.event?.id){
+    if(['create','update','join','leave','prefs','assign','cancel','discordSync'].includes(body.action)&&result.event?.id&&result.event.category!=='note'){
       try{result.discord=await syncAnnouncement(db,result.event.id,siteOrigin(request.url));}
       catch(error){
         console.error('Startrail Discord sync:',error.message);

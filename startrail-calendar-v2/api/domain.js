@@ -5,7 +5,8 @@ export const TEMPLATE = Object.freeze({
   24: {tank: 3, healer: 6, dps: 15}
 });
 export const ROLES = ['tank','healer','dps'];
-const cats = ['battle','explore','photo','rp','other'];
+const cats = ['battle','explore','photo','rp','other','note'];
+const NOTE_TYPES = ['birthday','anniversary','general'];
 export function fail(message, status=400) {const e = new Error(message); e.status=status; throw e;}
 export function str(v,max=100) {return typeof v==='string'?v.trim().slice(0,max):'';}
 export function requireText(v,max=100,label='文字') {
@@ -39,11 +40,38 @@ export function scheduleText(event) {
   const ending=effectiveEndDate(event);
   return ending===event.date?`${beginning}–${event.end}`:`${beginning} → ${ending} ${event.end}`;
 }
+// A recurring note stores the year of its first appearance, never a birth year.
+// February 29 is shown only in leap years; no artificial Feb 28 occurrence.
+export function noteOccurrenceDate(note, year) {
+  if(note.category!=='note' || note.recurrence!=='yearly')return note.date?.startsWith(`${year}-`)?note.date:null;
+  if(!Number.isInteger(year)||year<Number(note.date.slice(0,4)))return null;
+  const candidate=`${year}-${note.date.slice(5)}`;
+  return isValidDate(candidate)?candidate:null;
+}
+export function nextNoteOccurrence(note, today) {
+  if(note.category!=='note')return null;
+  const year=Number(today.slice(0,4));
+  for(let y=year;y<=year+5;y++){
+    const date=noteOccurrenceDate(note,y);
+    if(date&&date>=today)return date;
+  }
+  return null;
+}
 export function cleanEvent(v, previous=null) {
-  const title=requireText(v?.title,55,'活動名稱');
+  const title=requireText(v?.title,55,'活動或記事名稱');
   const date=str(v?.date,10),time=str(v?.time,5),end=str(v?.end,5);
   const submittedEndDate=str(v?.endDate,10);
   if(!isValidDate(date))fail('日期格式錯誤');
+  const category=cats.includes(v?.category)?v.category:'other';
+  const isNote=category==='note';
+  if(previous && (previous.category==='note')!==isNote)fail('已發布的活動與記事不能互相轉換，請另外新增一筆');
+  if(isNote){
+    return {title,date,time:'00:00',end:'',endDate:'',endDateManual:false,
+      cap:0,category:'note',location:'',description:str(v?.description,1500),
+      roleEnabled:false,waitlistEnabled:false,allDay:true,
+      recurrence:v?.recurrence==='yearly'?'yearly':'none',
+      noteType:NOTE_TYPES.includes(v?.noteType)?v.noteType:'general'};
+  }
   if(!isValidTime(time))fail('開始時間格式錯誤（請使用 24 小時制）');
   if(end&&!isValidTime(end))fail('結束時間格式錯誤（請使用 24 小時制）');
   if(!end&&submittedEndDate)fail('請先填寫結束時間，再設定結束日期');
@@ -57,7 +85,6 @@ export function cleanEvent(v, previous=null) {
   const cap=Number(v?.cap);
   if(![0,4,6,8,24].includes(cap))fail('參加人數設定錯誤');
   if(previous && cap && previous.participants.length>cap)fail('新名額不能少於已報名人數');
-  const category=cats.includes(v?.category)?v.category:'other';
   return {title,date,time,end,endDate,endDateManual,cap,category,
     location:str(v?.location,100),description:str(v?.description,1500),
     roleEnabled:category==='battle'&&v?.roleEnabled===true,
@@ -81,6 +108,7 @@ export function cleanPrefs(value) {
   return prefs;
 }
 export function joinEvent(e, member, prefs) {
+  if(e.category==='note')fail('記事不開放報名');
   if(e.status!=='active')fail('活動已取消');
   if([...e.participants,...e.waitlist].some(p=>p.id===member.uid)) fail('你已報名這場活動');
   const participant={id:member.uid,name:member.name};
@@ -97,6 +125,7 @@ export function joinEvent(e, member, prefs) {
   return {event:copy,result:'joined'};
 }
 export function leaveEvent(e, uid) {
+  if(e.category==='note')fail('記事沒有報名名單');
   if(e.hostId===uid)fail('主揪預設參團，不能直接退出；請取消活動或修改活動',403);
   const copy=structuredClone(e);
   const before=copy.participants.length, beforeWait=copy.waitlist.length;
@@ -110,6 +139,7 @@ export function leaveEvent(e, uid) {
   return {event:copy,promoted};
 }
 export function setPrefs(e, uid, prefs) {
+  if(e.category==='note')fail('記事沒有職業志願');
   if(!e.roleEnabled)fail('這場活動沒有開啟職業志願');
   const copy=structuredClone(e);
   const p=[...copy.participants,...copy.waitlist].find(x=>x.id===uid);
