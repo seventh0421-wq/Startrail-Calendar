@@ -10,10 +10,18 @@ const firebaseConfig = {
   appId: '1:883531055589:web:409781d3d66661b1a5ef0c'
 };
 const auth=getAuth(initializeApp(firebaseConfig));
-const provider=new GoogleAuthProvider();
-provider.setCustomParameters({prompt:'select_account'});
+// Each interactive request gets a fresh provider, not a cached provider/session hint.
+// Google owns its chooser UI: prompt requests a chooser but cannot guarantee it.
+function googleProvider(emailHint=''){
+  const provider=new GoogleAuthProvider();
+  const options=emailHint
+    ? {login_hint:emailHint.trim().toLowerCase()}
+    : {prompt:'select_account'};
+  provider.setCustomParameters(options);
+  return provider;
+}
 window.StartrailAuth={
-  login:()=>signInWithPopup(auth,provider),
+  login:({emailHint=''}={})=>signInWithPopup(auth,googleProvider(emailHint)),
   logout:()=>signOut(auth),
   token:()=>auth.currentUser?getIdToken(auth.currentUser):Promise.reject(new Error('尚未登入')),
   get currentUser(){return auth.currentUser;}

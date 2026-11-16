@@ -91,13 +91,18 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;background:rad
 </style>
 </head>
 <body>
-<div id="site" hidden><div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">✧</div><div><div class="brand-name">星旅日誌</div><div class="brand-sub">EORZEA ADVENTURE LOG</div></div></div><nav class="side-links" id="sideNav"></nav><div class="side-bottom">✦ 星空冒險風 · V2.3.2<br>Google 登入 · 私人好友行事曆<br>活動資料儲存在 Firebase</div></aside><div><header class="mobile-top"><div class="brand"><div class="brand-mark">✧</div><div><div class="brand-name">星旅日誌</div><div class="brand-sub">一起出發吧，冒險者</div></div></div><div class="demo">✦ CLOUD BETA</div></header><main class="main" id="appMain"></main></div><nav class="bottom-nav" id="bottomNav"></nav></div></div><div id="overlay"></div><div id="toast" aria-live="polite"></div>
-<div id="loginGate" class="login-gate"><div class="login-card"><div style="font-size:40px;color:#e6cfa5">✧</div><div class="eyebrow">EORZEA ADVENTURE LOG</div><h1>星旅日誌</h1><p id="loginMessage">載入中，準備你的冒險手帳……</p><button class="btn primary full" id="googleContinue" hidden>繼續使用目前帳號</button><button class="btn primary full" id="googleLogin" hidden>選擇 Google 帳號登入</button><button class="btn soft full" id="googleLogout" hidden>選擇其他 Google 帳號</button><p class="tiny muted" style="margin:15px 0 0">好友邀請制 · 沒有通過邀請的帳號無法查看私人活動</p></div></div>
+<div id="site" hidden><div class="app"><aside class="sidebar"><div class="brand"><div class="brand-mark">✧</div><div><div class="brand-name">星旅日誌</div><div class="brand-sub">EORZEA ADVENTURE LOG</div></div></div><nav class="side-links" id="sideNav"></nav><div class="side-bottom">✦ 星空冒險風 · V2.3.3<br>Google 登入 · 私人好友行事曆<br>活動資料儲存在 Firebase</div></aside><div><header class="mobile-top"><div class="brand"><div class="brand-mark">✧</div><div><div class="brand-name">星旅日誌</div><div class="brand-sub">一起出發吧，冒險者</div></div></div><div class="demo">✦ CLOUD BETA</div></header><main class="main" id="appMain"></main></div><nav class="bottom-nav" id="bottomNav"></nav></div></div><div id="overlay"></div><div id="toast" aria-live="polite"></div>
+<div id="loginGate" class="login-gate"><div class="login-card"><div style="font-size:40px;color:#e6cfa5">✧</div><div class="eyebrow">EORZEA ADVENTURE LOG</div><h1>星旅日誌</h1><p id="loginMessage">載入中，準備你的冒險手帳……</p><button class="btn primary full" id="googleContinue" hidden>繼續使用目前帳號</button><button class="btn primary full" id="googleLogin" hidden>選擇 Google 帳號登入</button><button class="btn soft full" id="googleLogout" hidden>登出並更換 Google 帳號</button><button class="btn soft full" id="googleSpecificToggle" hidden>Google 沒有顯示帳號清單？指定電子郵件</button><form id="googleSpecificForm" class="account-specific" hidden><label for="googleSpecificEmail">FF14 專用 Google 電子郵件</label><input id="googleSpecificEmail" type="email" autocomplete="email" inputmode="email" placeholder="ff14.account@gmail.com" maxlength="254" required><button class="btn primary full" type="submit">使用這個 Google 帳號驗證</button><p class="tiny muted">只輸入電子郵件，密碼仍由 Google 處理；登入後會檢查是否為這個帳號。</p></form><p class="tiny muted" style="margin:15px 0 0">好友邀請制 · 沒有通過邀請的帳號無法查看私人活動</p></div></div>
 <style>
 .login-gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 70% 25%,#4b527755,transparent 37%),#0c1225}
 .login-card{width:min(100%,400px);background:linear-gradient(155deg,#222f50,#161e36);padding:32px 24px;text-align:center;border:1px solid #5b6183;border-radius:24px;box-shadow:0 24px 60px #0006}
 .login-card h1{font:30px Georgia,serif;color:#f2dec0;margin:12px 0}.login-card p{color:#aebbd4;line-height:1.7}
 .login-card button{margin-top:12px}
+.account-specific{margin-top:12px;padding:14px;border:1px solid #516181;border-radius:12px;background:#111a31;text-align:left}
+.account-specific label{display:block;font-size:12px;font-weight:700;color:#dde5f3;margin-bottom:7px}
+.account-specific input{width:100%;min-height:42px;padding:10px 12px;border-radius:10px;border:1px solid #53627f;background:#0d1428;color:#f0f3f9;outline:none}
+.account-specific input:focus{border-color:#e6cfa5}
+.account-specific p{margin:10px 0 0;font-size:11px;line-height:1.5}
 [hidden]{display:none!important}
 
 /* Calendar-only notes: distinct from joinable events. */
@@ -163,9 +168,13 @@ const loginMessage=document.getElementById('loginMessage');
 const loginBtn=document.getElementById('googleLogin');
 const logoutBtn=document.getElementById('googleLogout');
 const continueBtn=document.getElementById('googleContinue');
+const specificToggle=document.getElementById('googleSpecificToggle');
+const specificForm=document.getElementById('googleSpecificForm');
+const specificEmail=document.getElementById('googleSpecificEmail');
 function authGate(message,login=false,switchAccount=false,continueAccount=false){
   site.hidden=true;gate.hidden=false;loginMessage.textContent=message;
   loginBtn.hidden=!login;logoutBtn.hidden=!switchAccount;continueBtn.hidden=!continueAccount;
+  specificToggle.hidden=!(login||switchAccount);specificForm.hidden=true;
 }
 function showRememberedAccount(user,message=''){
   const account=user?.email||'已登入的 Google 帳號';
@@ -226,25 +235,79 @@ async function enterAccount(account){
   activeAccountLoad={uid:account.uid,generation,promise};
   try{await promise;}finally{if(activeAccountLoad?.promise===promise)activeAccountLoad=null;}
 }
-async function chooseGoogleAccount(){
+// Switching is deliberately two clicks: sign out Firebase first, then let the
+// user trigger a fresh popup. This avoids popup blockers after async signOut.
+async function startAccountSwitch(){
   if(accountPopupInProgress)return;
-  accountPopupInProgress=true;
-  accountConfirmed=true;
-  clearCurrentSession(); // Never show the previous account's private data during switching.
-  // Start the Google popup DIRECTLY from the user's click, to avoid popup blocking.
-  authGate('正在開啟 Google 帳號選擇視窗……');
+  accountConfirmed=false;
+  clearCurrentSession();
+  authGate('正在清除上次的星旅日誌登入狀態……');
   try{
-    const credential=await window.StartrailAuth.login();
-    await enterAccount(credential.user);
+    await window.StartrailAuth.logout();
+    authGate('已登出先前帳號。請選擇 Google 帳號；如果 Google 自動選錯，可指定專用電子郵件。',true);
+  }catch(e){
+    authGate('登出未完成：'+(e.message||'請再試一次'),false,true,true);
+  }
+}
+async function chooseGoogleAccount(emailHint=''){
+  if(accountPopupInProgress)return;
+  const expected=emailHint.trim().toLowerCase();
+  accountPopupInProgress=true;
+  clearCurrentSession(); // Do not display private data from any prior account.
+  authGate(expected?`正在透過 Google 驗證 ${expected}……`:'正在開啟 Google 登入視窗……');
+  try{
+    const credential=await window.StartrailAuth.login({emailHint:expected});
+    const actual=(credential.user?.email||'').trim().toLowerCase();
+    if(expected&&actual!==expected){
+      accountConfirmed=false;
+      await window.StartrailAuth.logout();
+      clearCurrentSession();
+      authGate(`Google 實際登入了 ${actual||'其他帳號'}，而不是 ${expected}。請使用「指定電子郵件」重試，或在 Google 視窗選「使用其他帳戶」。`,true);
+      specificForm.hidden=false;
+      specificEmail.value=expected;
+      return;
+    }
+    // Google may skip the chooser even with prompt=select_account.
+    // Always show which account it actually returned, instead of entering
+    // the private calendar without the user's confirmation.
+    if(!expected){
+      accountConfirmed=false;
+      showRememberedAccount(credential.user,'Google 已驗證此帳號。');
+    }else{
+      accountConfirmed=true;
+      await enterAccount(credential.user);
+    }
   }catch(e){
     accountConfirmed=false;
     const remembered=window.StartrailAuth?.currentUser;
     if(remembered)showRememberedAccount(remembered,'尚未完成帳號切換。');
-    else authGate('Google 登入未完成：'+(e.message||'請再試一次'),true,false,false);
+    else{
+      authGate('Google 登入未完成：'+(e.message||'請再試一次'),true);
+      if(expected){specificForm.hidden=false;specificEmail.value=expected;}
+    }
   }finally{accountPopupInProgress=false;}
 }
-loginBtn.addEventListener('click',chooseGoogleAccount);
-logoutBtn.addEventListener('click',chooseGoogleAccount);
+loginBtn.addEventListener('click',()=>chooseGoogleAccount());
+logoutBtn.addEventListener('click',startAccountSwitch);
+specificToggle.addEventListener('click',()=>{
+  specificForm.hidden=!specificForm.hidden;
+  if(!specificForm.hidden)specificEmail.focus();
+});
+specificForm.addEventListener('submit',event=>{
+  event.preventDefault();
+  const expected=specificEmail.value.trim().toLowerCase();
+  if(!specificEmail.checkValidity()){specificEmail.reportValidity();return;}
+  // If another Firebase account is remembered, first use the visible
+  // two-step logout, so the user can retry without the old session.
+  if(window.StartrailAuth?.currentUser){
+    startAccountSwitch().then(()=>{
+      specificForm.hidden=false;specificEmail.value=expected;
+      loginMessage.textContent='舊帳號已登出。請再按一次「使用這個 Google 帳號驗證」。';
+    });
+    return;
+  }
+  chooseGoogleAccount(expected);
+});
 continueBtn.addEventListener('click',()=>{
   const remembered=window.StartrailAuth?.currentUser;
   if(!remembered){authGate('請選擇 Google 帳號登入。',true);return;}
@@ -420,8 +483,8 @@ if(el.dataset.discordUnlink){unlinkDiscordAccount();return}
 if(el.dataset.discordCopy){if(linkCode)navigator.clipboard?.writeText(linkCode).then(()=>toast('綁定碼已複製')).catch(()=>toast('無法複製，請手動輸入'));return}
 if(el.dataset.discordSync){retryDiscord(el.dataset.discordSync);return}if(el.dataset.edit){editId=el.dataset.edit;route('create');return}if(el.dataset.cancel){cancelEvent(el.dataset.cancel);return}if(el.dataset.share){shareEvent(el.dataset.share);return}
 if(el.dataset.avatar){chosenAvatar=el.dataset.avatar;document.querySelectorAll('[data-avatar]').forEach(b=>b.classList.toggle('picked',b.dataset.avatar===chosenAvatar));const picture=document.querySelector('.profile-head .avatar');if(picture)picture.textContent=chosenAvatar;return}
-if(el.dataset.action==='switch-account'){chooseGoogleAccount();return}
-if(el.dataset.action==='logout'){accountConfirmed=false;window.StartrailAuth?.logout();return}
+if(el.dataset.action==='switch-account'){startAccountSwitch();return}
+if(el.dataset.action==='logout'){startAccountSwitch();return}
 if(el.dataset.action==='members'){api('members').then(data=>{const target=document.getElementById('memberList');if(!target)return;target.innerHTML=`<strong>目前成員</strong>${data.members.map(m=>`<div class="row between" style="padding:8px 0;border-bottom:1px solid #384463"><span>${escapeHtml(m.name)} (${escapeHtml(m.email)}) · ${m.role==='admin'?'管理員':m.active?'啟用':'停用'}</span>${m.role!=='admin'?`<button class="btn small ${m.active?'danger':'soft'}" data-member="${escapeHtml(m.uid)}" data-enabled="${m.active?'0':'1'}">${m.active?'停用':'恢復'}</button>`:''}</div>`).join('')}<p style="margin-top:12px">已邀請：${data.invites.map(i=>escapeHtml(i.email)).join('、')||'尚無'}</p>`}).catch(e=>toast('⚠ '+e.message));return}
 if(el.dataset.member){execute(async()=>{await api('disableMember',{uid:el.dataset.member,active:el.dataset.enabled==='1'});},'成員狀態已更新');return}});
 document.addEventListener('change',ev=>{
